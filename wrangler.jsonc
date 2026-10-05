@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "vovingo",
+  "name": "dev",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,7 +10,9 @@
   },
   "vars": {
     "D1_AUTH_MODE": "binding",
-    "STORAGE_DRIVER": "r2"
+    "STORAGE_DRIVER": "r2",
+    "AI_PROVIDER": "mock",
+    "ALLOW_MOCK_AI": "true"
   },
   "d1_databases": [
     {

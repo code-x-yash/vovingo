@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "https://dev.motoro.workers.dev/$1"
+    }
+  ]
+}
