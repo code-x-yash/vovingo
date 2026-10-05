@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vovingo",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "D1_AUTH_MODE": "binding",
+    "STORAGE_DRIVER": "r2"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vovingo",
+      "database_id": "a237e05a-5a1e-454b-b64a-dac7cee6044e"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "vovingo-media"
+    }
+  ]
+}
