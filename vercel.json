@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "https://dev.motoro.workers.dev/$1"
+      "destination": "https://dev.vovingo.workers.dev/$1"
     }
   ]
 }
