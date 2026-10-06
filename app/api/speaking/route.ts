@@ -8,6 +8,7 @@ import { clientIp, rateLimit } from "@/lib/auth/rate-limit";
 import { jsonRateLimited, readJson } from "@/lib/api/http";
 import { fieldErrors } from "@/lib/auth/schemas";
 import { getSpeakingFeed, submitSpeaking } from "@/lib/speaking/store";
+import { enforceQuota, recordUsage } from "@/lib/billing/entitlements";
 
 const submitSchema = z.object({
   mode: z.enum(["free", "topic", "situation", "roleplay"]),
@@ -54,6 +55,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const data = parsed.data;
+
+  const denied = await enforceQuota(user.id, "speaking");
+  if (denied) return denied;
+
   let scenarioId: number | null = null;
   let prompt = data.prompt;
 
@@ -83,6 +88,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     durationSec: data.durationSec,
   });
 
+  await recordUsage(user.id, "speaking", { mode: data.mode });
+
   return NextResponse.json({
     ok: true,
     sessionId: outcome.sessionId,
@@ -92,6 +99,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       metrics: outcome.analysis.metrics,
       mistakes: outcome.analysis.mistakes,
       recommendations: outcome.analysis.recommendations,
+      emotion: outcome.analysis.emotion,
     },
     planXp: outcome.planXp,
   });

@@ -11,6 +11,16 @@ const PAGES = [
   "/writing",
   "/conversation",
   "/placement",
+  "/speedrun",
+  "/phantom",
+  "/bloopers",
+  "/wrapped",
+  "/leaderboard",
+  "/settings",
+  "/scripts",
+  "/duel",
+  "/story",
+  "/stage",
 ];
 
 test("core pages render for a fresh account", async ({ page }) => {

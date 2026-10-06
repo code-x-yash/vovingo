@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isQuotaWall, Paywall } from "@/components/billing/paywall";
 import { googleSpeechHostReachable, speechFailureFor } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 import type { RecentSession, ScenarioPrompt, SpeakingMode } from "@/lib/speaking/store";
@@ -37,9 +38,16 @@ type Analysis = {
   };
   mistakes: { key: string; title: string; wrong: string; correct: string; why: string; severity: string }[];
   recommendations: { title: string; body: string }[];
+  emotion?: { label: string; energy: number; note: string };
 };
 
-type SubmitResponse = { sessionId: number; analysis: Analysis; planXp: number; error?: string };
+type SubmitResponse = {
+  sessionId: number;
+  analysis: Analysis;
+  planXp: number;
+  error?: string;
+  code?: string;
+};
 
 const SCORE_LABELS: Record<string, string> = {
   grammar: "Grammar",
@@ -115,13 +123,25 @@ function ratingFor(score: number): string {
   return "Keep going";
 }
 
+export type StudioInitialScript = {
+  mode: SpeakingMode;
+  scenarioId: number | null;
+  prompt: string;
+  label: string;
+};
+
 export function SpeakingStudio({
   initial,
+  initialScript = null,
 }: {
   initial: { scenarios: ScenarioPrompt[]; topics: string[]; recent: RecentSession[] };
+  initialScript?: StudioInitialScript | null;
 }) {
-  const [stage, setStage] = useState<"pick" | "record" | "review" | "result">("pick");
-  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [stage, setStage] = useState<"pick" | "record" | "review" | "result">(
+    initialScript ? "record" : "pick"
+  );
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [chosen, setChosen] = useState<Chosen | null>(initialScript);
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
   const [typed, setTyped] = useState(false);
@@ -424,6 +444,10 @@ export function SpeakingStudio({
       });
       const data = (await res.json().catch(() => ({}))) as SubmitResponse;
       if (!res.ok) {
+        if (isQuotaWall(res.status, data)) {
+          setPaywallOpen(true);
+          return;
+        }
         toast.error(data.error ?? "Something went wrong.");
         return;
       }
@@ -771,6 +795,22 @@ export function SpeakingStudio({
                   <span className="text-muted-foreground">long pauses</span>
                 </span>
               </div>
+
+              {result.analysis.emotion && (
+                <div className="mx-auto mt-5 max-w-lg rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 text-left">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-xs font-semibold text-primary">
+                      Sounded {result.analysis.emotion.label}
+                    </p>
+                    <p className="text-[11px] tabular-nums text-muted-foreground">
+                      energy {result.analysis.emotion.energy}/100
+                    </p>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {result.analysis.emotion.note}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -873,6 +913,8 @@ export function SpeakingStudio({
           </div>
         </section>
       )}
+
+      <Paywall open={paywallOpen} onOpenChange={setPaywallOpen} metric="speaking" />
     </div>
   );
 }

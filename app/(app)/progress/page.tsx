@@ -9,13 +9,14 @@ import {
   Lock,
   Mic,
   Target,
+  Timer,
   Trophy,
   Wrench,
 } from "lucide-react";
 import { getSessionUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { skillScores } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { skillScores, speakingSessions } from "@/lib/db/schema";
+import { desc, eq } from "drizzle-orm";
 import { findStreak } from "@/lib/plan/store";
 import { EMPTY_STREAK } from "@/lib/plan/streak";
 import {
@@ -138,6 +139,18 @@ export default async function ProgressPage() {
     label: SKILL_LABEL[k] ?? k,
     score: Math.round(skillBy.get(k) ?? 0),
   }));
+
+  const paceRows = await db
+    .select({
+      wpm: speakingSessions.wpm,
+      fillers: speakingSessions.fillerCount,
+      at: speakingSessions.createdAt,
+    })
+    .from(speakingSessions)
+    .where(eq(speakingSessions.userId, user.id))
+    .orderBy(desc(speakingSessions.createdAt))
+    .limit(10);
+  const paceSeries = paceRows.slice().reverse();
 
   const [activity, mistakeList] = await Promise.all([
     getRecentActivity(user.id),
@@ -291,6 +304,94 @@ export default async function ProgressPage() {
           </div>
         )}
       </section>
+
+      {paceSeries.length > 1 && (
+        <>
+          <div className="divider-fade" />
+
+          <section className="animate-fade-up">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-eyebrow">Pace &amp; fillers</p>
+                <h2 className="text-h2 mt-2.5">How you&apos;re sounding lately</h2>
+                <p className="mt-1.5 text-[15px] text-muted-foreground">
+                  Your last {paceSeries.length} takes — pace in words per minute, then filler
+                  words per take. Steady beats fast.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-xs text-muted-foreground shadow-xs">
+                <Timer className="size-3.5" />
+                aim 110–150 wpm
+              </span>
+            </div>
+
+            <div className="mt-6 grid gap-5 sm:grid-cols-2">
+              {[
+                {
+                  key: "wpm" as const,
+                  label: "Pace (wpm)",
+                  values: paceSeries.map((r) => r.wpm ?? 0),
+                  floor: 60,
+                  ceil: 200,
+                  band: [110, 150] as [number, number],
+                  fmt: (v: number) => `${v}`,
+                },
+                {
+                  key: "fillers" as const,
+                  label: "Filler words per take",
+                  values: paceSeries.map((r) => r.fillers ?? 0),
+                  floor: 0,
+                  ceil: 10,
+                  band: null,
+                  fmt: (v: number) => `${v}`,
+                },
+              ].map((chart) => (
+                <div key={chart.key} className="rounded-2xl border border-border bg-card p-4 shadow-xs sm:p-5">
+                  <p className="text-eyebrow">{chart.label}</p>
+                  <div className="relative mt-4 h-28">
+                    {chart.band && (
+                      <div
+                        aria-hidden
+                        className="absolute inset-x-0 rounded-md bg-primary/5"
+                        style={{
+                          bottom: `${((chart.band[0] - chart.floor) / (chart.ceil - chart.floor)) * 100}%`,
+                          height: `${((chart.band[1] - chart.band[0]) / (chart.ceil - chart.floor)) * 100}%`,
+                        }}
+                      />
+                    )}
+                    <div className="relative flex h-full items-end gap-1.5">
+                      {chart.values.map((v, i) => {
+                        const pct =
+                          Math.max(4, Math.min(100, ((v - chart.floor) / (chart.ceil - chart.floor)) * 100));
+                        const inBand =
+                          chart.band == null || (v >= chart.band[0] && v <= chart.band[1]);
+                        return (
+                          <div
+                            key={i}
+                            title={`Take ${i + 1}: ${chart.fmt(v)}`}
+                            className={`flex-1 rounded-t-sm transition-colors ${
+                              inBand ? "bg-primary/70" : "bg-muted-foreground/35"
+                            }`}
+                            style={{ height: `${pct}%` }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="mt-2.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>oldest</span>
+                    <span>
+                      latest {chart.fmt(chart.values[chart.values.length - 1] ?? 0)}
+                      {chart.key === "fillers" ? " fillers" : " wpm"}
+                    </span>
+                    <span>newest</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       <div className="divider-fade" />
 

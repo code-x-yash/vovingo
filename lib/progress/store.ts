@@ -19,6 +19,7 @@ import {
 import { findStreak } from "@/lib/plan/store";
 import { applyActivity, EMPTY_STREAK } from "@/lib/plan/streak";
 import { todayKey } from "@/lib/plan/generate";
+import { recordXp } from "@/lib/progress/leaderboard";
 import {
   criterionMet,
   type AchievementRow,
@@ -183,6 +184,7 @@ export async function unlockEarnedAchievements(
         xp: next.xp,
       });
     }
+    await recordXp(userId, xpAwarded, "achievement").catch(() => undefined);
   }
 
   return { newlyUnlocked: toUnlock, xpAwarded };

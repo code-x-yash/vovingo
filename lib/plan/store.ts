@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/schema";
 import { buildPlan, todayKey, type PlanSeed } from "./generate";
 import { applyActivity, EMPTY_STREAK, XP_PER_ITEM, XP_PLAN_BONUS, type StreakState } from "./streak";
+import { recordXp } from "@/lib/progress/leaderboard";
 
 export type PlanRow = typeof dailyPlans.$inferSelect;
 
@@ -246,6 +247,8 @@ export async function completePlanItems(
       xp: next.xp,
     });
   }
+
+  await recordXp(userId, xpGained, "plan").catch(() => undefined);
 
   return { ok: true, plan: planRow, streak: next, xpGained };
 }

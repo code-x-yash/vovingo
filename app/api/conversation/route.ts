@@ -13,6 +13,7 @@ import {
   startCoachConversation,
   startScenarioConversation,
 } from "@/lib/conversation/store";
+import { enforceQuota, recordUsage } from "@/lib/billing/entitlements";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("list") }),
@@ -94,11 +95,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (data.action === "send") {
+    const denied = await enforceQuota(user.id, "conversation");
+    if (denied) return denied;
+
     const result = await sendChatTurn(user.id, data.conversationId, data.message);
     if (!result.ok) {
       const status = result.code === "not_found" ? 404 : 409;
       return NextResponse.json({ error: "Conversation not available." }, { status });
     }
+    await recordUsage(user.id, "conversation");
     return NextResponse.json(result);
   }
 

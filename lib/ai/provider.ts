@@ -1,6 +1,7 @@
 import { computeMetrics, type SpeakingMetrics } from "./metrics";
 import { detectMistakes, type DetectRule } from "@/lib/mistakes/detect";
 import type { DetectedMistake, Recommendation } from "@/lib/db/schema";
+import * as z from "zod";
 
 export type SkillScores = {
   grammar: number;
@@ -18,12 +19,19 @@ export type SpeakingInput = {
   rules: DetectRule[];
 };
 
+export type EmotionRead = {
+  label: string;
+  energy: number;
+  note: string;
+};
+
 export type SpeakingResult = {
   metrics: SpeakingMetrics;
   scores: SkillScores;
   mistakes: DetectedMistake[];
   summary: string;
   recommendations: Recommendation[];
+  emotion: EmotionRead;
 };
 
 export type ProviderCall = {
@@ -33,10 +41,32 @@ export type ProviderCall = {
   tokensOut: number;
 };
 
+export type CompleteRequest = {
+  system?: string;
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+  /** Deterministic stand-in returned by the mock provider (real providers ignore it). */
+  mock?: string;
+};
+
+export type CompleteCall = {
+  text: string;
+  latencyMs: number;
+  tokensIn: number;
+  tokensOut: number;
+};
+
 export interface AIProvider {
   readonly name: string;
   readonly model: string | null;
   analyzeSpeaking(input: SpeakingInput): Promise<ProviderCall>;
+  complete(request: CompleteRequest): Promise<CompleteCall>;
+}
+
+/** Rough token estimate (~4 chars/token) — good enough for logs and budgets. */
+export function estimateTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
 }
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, v));
@@ -138,6 +168,51 @@ export function scoreNaturalness(m: SpeakingMetrics): number {
   return r1(clamp(score));
 }
 
+/**
+ * Emotional read of the take from pacing and language signals: energy is a
+ * 0..100 blend of pace-fit and filler cleanliness; the label is the dominant
+ * stance the words were delivered with.
+ */
+export function scoreEmotion(m: SpeakingMetrics): EmotionRead {
+  if (m.wordCount === 0) {
+    return { label: "silent", energy: 0, note: "No speech detected yet." };
+  }
+  const energy = clamp(
+    Math.round(wpmFit(m.wpm) * 0.6 + (1 - clamp(m.fillerRatio / 0.08, 0, 1)) * 40),
+    0,
+    100
+  );
+  if (m.wpm >= 165 || (m.wpm >= 130 && m.fillerRatio > 0.05)) {
+    return {
+      label: "rushed",
+      energy,
+      note: "Ideas arrive faster than the words — breathe between points.",
+    };
+  }
+  if (m.wpm >= 130 && m.fillerRatio <= 0.03 && m.hedgeCount <= 1) {
+    return {
+      label: "confident",
+      energy,
+      note: "Strong forward momentum — you sound sure of the point.",
+    };
+  }
+  if (m.wpm < 90 || m.hedgeCount >= 3) {
+    return {
+      label: "hesitant",
+      energy,
+      note: "Heavy hedging or a slow clip — claim the sentence earlier.",
+    };
+  }
+  if (m.contractionCount >= 3 && m.connectorCount >= 2) {
+    return {
+      label: "warm",
+      energy,
+      note: "Conversational and connected — easy to listen to.",
+    };
+  }
+  return { label: "steady", energy, note: "Even tone — solid base to push from." };
+}
+
 const SKILL_LABEL: Record<keyof SkillScores, string> = {
   grammar: "Grammar",
   vocabulary: "Vocabulary",
@@ -236,6 +311,37 @@ function buildRecommendations(
 }
 
 /**
+ * Deterministic heuristic analysis: real scoring, no network, same input →
+ * same output. Shared by the mock provider and as the fallback base for the
+ * Workers AI provider.
+ */
+export async function analyzeWithHeuristics(input: SpeakingInput): Promise<ProviderCall> {
+  const started = Date.now();
+  const metrics = computeMetrics(input.transcript, input.durationSec);
+  const mistakes = detectMistakes(input.transcript, input.rules);
+
+  const scores: SkillScores = {
+    grammar: scoreGrammar(mistakes, metrics.wordCount),
+    vocabulary: scoreVocabulary(metrics),
+    fluency: scoreFluency(metrics),
+    pronunciation: scorePronunciation(metrics),
+    confidence: scoreConfidence(metrics),
+    naturalness: scoreNaturalness(metrics),
+  };
+
+  const summary = buildSummary(metrics, scores, mistakes.length);
+  const recommendations = buildRecommendations(metrics, scores, mistakes);
+  const emotion = scoreEmotion(metrics);
+
+  return {
+    result: { metrics, scores, mistakes, summary, recommendations, emotion },
+    latencyMs: Date.now() - started,
+    tokensIn: metrics.wordCount + input.rules.length,
+    tokensOut: summary.split(/\s+/).length + recommendations.length * 12,
+  };
+}
+
+/**
  * Deterministic mock AI: real heuristics, no network, same input → same
  * output. Refuses to run in production unless ALLOW_MOCK_AI=true.
  */
@@ -243,42 +349,195 @@ export class MockAIProvider implements AIProvider {
   readonly name = "mock";
   readonly model = "heuristics-v1";
 
-  async analyzeSpeaking(input: SpeakingInput): Promise<ProviderCall> {
+  analyzeSpeaking(input: SpeakingInput): Promise<ProviderCall> {
+    return analyzeWithHeuristics(input);
+  }
+
+  async complete(request: CompleteRequest): Promise<CompleteCall> {
     const started = Date.now();
-    const metrics = computeMetrics(input.transcript, input.durationSec);
-    const mistakes = detectMistakes(input.transcript, input.rules);
-
-    const scores: SkillScores = {
-      grammar: scoreGrammar(mistakes, metrics.wordCount),
-      vocabulary: scoreVocabulary(metrics),
-      fluency: scoreFluency(metrics),
-      pronunciation: scorePronunciation(metrics),
-      confidence: scoreConfidence(metrics),
-      naturalness: scoreNaturalness(metrics),
+    const text = (request.mock ?? mockCompleteFallback(request)).trim();
+    return {
+      text,
+      latencyMs: Date.now() - started,
+      tokensIn: estimateTokens(`${request.system ?? ""}\n${request.prompt}`),
+      tokensOut: estimateTokens(text),
     };
+  }
+}
 
-    const summary = buildSummary(metrics, scores, mistakes.length);
-    const recommendations = buildRecommendations(metrics, scores, mistakes);
+function mockCompleteFallback(request: CompleteRequest): string {
+  const head = request.prompt.trim().split(/\s+/).slice(0, 20).join(" ");
+  return `Mock reply for: ${head}${request.prompt.trim().split(/\s+/).length > 20 ? "…" : ""}`;
+}
+
+type WorkersAiRun = (model: string, input: Record<string, unknown>) => Promise<unknown>;
+
+const DEFAULT_WORKERS_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+
+/** Pull a plain string out of the shapes Workers AI models return. */
+function extractCompletionText(res: unknown): string {
+  if (typeof res === "string") return res;
+  if (res && typeof res === "object") {
+    const o = res as Record<string, unknown>;
+    if (typeof o.response === "string") return o.response;
+    if (typeof o.text === "string") return o.text;
+    if (typeof o.result === "string") return o.result;
+    if (o.result && typeof o.result === "object") {
+      const inner = o.result as Record<string, unknown>;
+      if (typeof inner.response === "string") return inner.response;
+      if (typeof inner.text === "string") return inner.text;
+    }
+  }
+  return "";
+}
+
+function sanitizeSummary(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim().replace(/^["“']+|["”']+$/g, "");
+  return flat.length > 420 ? `${flat.slice(0, 417).trimEnd()}…` : flat;
+}
+
+const enrichmentSchema = z.object({
+  summary: z.string().min(1).max(600),
+  emotion: z.object({
+    label: z.string().min(1).max(30),
+    note: z.string().min(1).max(240),
+  }),
+});
+
+/**
+ * Model enrichment reply: either the requested JSON {summary, emotion} or a
+ * plain-prose summary (then the heuristic emotion label stands).
+ */
+function parseEnrichment(
+  raw: string
+): { summary: string; emotion?: { label: string; note: string } } | null {
+  const cleaned = raw
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/, "")
+    .trim();
+  try {
+    const parsed = enrichmentSchema.safeParse(JSON.parse(cleaned));
+    if (parsed.success) {
+      return {
+        summary: parsed.data.summary,
+        emotion: { label: parsed.data.emotion.label.toLowerCase(), note: parsed.data.emotion.note },
+      };
+    }
+  } catch {
+    /* not JSON — fall through to prose */
+  }
+  return cleaned ? { summary: cleaned } : null;
+}
+
+/**
+ * Cloudflare Workers AI provider. `complete()` hits the `AI` binding with a
+ * chat model; `analyzeSpeaking()` keeps the deterministic heuristic pipeline
+ * for scores/mistakes and only enriches the prose summary with the model —
+ * any binding/model failure falls back to the heuristic summary silently.
+ */
+export class WorkersAIProvider implements AIProvider {
+  readonly name = "workers-ai";
+  readonly model: string;
+  private readonly runOverride: WorkersAiRun | null;
+
+  constructor(run?: WorkersAiRun) {
+    this.runOverride = run ?? null;
+    this.model = process.env.AI_MODEL?.trim() || DEFAULT_WORKERS_MODEL;
+  }
+
+  private async run(input: Record<string, unknown>): Promise<unknown> {
+    if (this.runOverride) return this.runOverride(this.model, input);
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const context = await getCloudflareContext({ async: true });
+    const ai = (context.env as { AI?: { run: WorkersAiRun } }).AI;
+    if (!ai?.run) {
+      throw new Error(
+        'AI_PROVIDER=workers-ai but no AI binding found. Add { "ai": { "binding": "AI" } } to wrangler.jsonc.'
+      );
+    }
+    return ai.run(this.model, input);
+  }
+
+  async complete(request: CompleteRequest): Promise<CompleteCall> {
+    const started = Date.now();
+    const messages: { role: string; content: string }[] = [];
+    if (request.system) messages.push({ role: "system", content: request.system });
+    messages.push({ role: "user", content: request.prompt });
+
+    const res = await this.run({
+      messages,
+      max_tokens: request.maxTokens ?? 512,
+      temperature: request.temperature ?? 0.4,
+    });
+    const text = extractCompletionText(res).trim();
+    if (!text) throw new Error("Workers AI returned an empty completion.");
 
     return {
-      result: { metrics, scores, mistakes, summary, recommendations },
+      text,
       latencyMs: Date.now() - started,
-      tokensIn: metrics.wordCount + input.rules.length,
-      tokensOut: summary.split(/\s+/).length + recommendations.length * 12,
+      tokensIn: estimateTokens(`${request.system ?? ""}\n${request.prompt}`),
+      tokensOut: estimateTokens(text),
     };
+  }
+
+  async analyzeSpeaking(input: SpeakingInput): Promise<ProviderCall> {
+    const base = await analyzeWithHeuristics(input);
+    try {
+      const s = base.result.scores;
+      const m = base.result.metrics;
+      const enrich = await this.complete({
+        system:
+          "You are a warm, precise English speaking coach. Reply with ONLY minified JSON: " +
+          '{"summary":"<at most 2 short sentences, plain first person>","emotion":{"label":"<one word>","note":"<at most 12 words>"}} ' +
+          "— label from: confident, rushed, hesitant, warm, steady. No prose outside the JSON.",
+        prompt:
+          `Scores — grammar ${s.grammar}, vocabulary ${s.vocabulary}, fluency ${s.fluency}, ` +
+          `pronunciation ${s.pronunciation}, confidence ${s.confidence}, naturalness ${s.naturalness}. ` +
+          `Metrics — ${m.wordCount} words, ${Math.round(m.wpm)} wpm, ${m.fillerCount} fillers, ` +
+          `${m.longPauseCount} long pauses. Mistakes detected: ${base.result.mistakes.length}. ` +
+          `Heuristic draft — summary: ${base.result.summary} emotion: ${base.result.emotion.label} (${base.result.emotion.note})`,
+        maxTokens: 160,
+        temperature: 0.4,
+        mock: JSON.stringify({
+          summary: base.result.summary,
+          emotion: { label: base.result.emotion.label, note: base.result.emotion.note },
+        }),
+      });
+      const parsed = parseEnrichment(enrich.text);
+      if (parsed) {
+        const summary = sanitizeSummary(parsed.summary);
+        if (summary) base.result.summary = summary;
+        if (parsed.emotion?.label) {
+          base.result.emotion = {
+            label: parsed.emotion.label,
+            energy: base.result.emotion.energy,
+            note: sanitizeSummary(parsed.emotion.note),
+          };
+        }
+        base.tokensIn += enrich.tokensIn;
+        base.tokensOut += enrich.tokensOut;
+        base.latencyMs += enrich.latencyMs;
+      }
+    } catch {
+      /* binding or model unavailable — heuristic summary stands */
+    }
+    return base;
   }
 }
 
 export function getAIProvider(): AIProvider {
   const kind = process.env.AI_PROVIDER ?? "mock";
+  if (kind === "workers-ai") {
+    return new WorkersAIProvider();
+  }
   if (kind !== "mock") {
     throw new Error(
-      `Unknown AI_PROVIDER "${kind}". Only "mock" is implemented so far — real providers arrive in a later phase.`
+      `Unknown AI_PROVIDER "${kind}". Supported providers: "mock", "workers-ai".`
     );
   }
   if (process.env.NODE_ENV === "production" && process.env.ALLOW_MOCK_AI !== "true") {
     throw new Error(
-      "MockAIProvider refuses to run in production. Set ALLOW_MOCK_AI=true (explicit opt-in) or implement a real provider."
+      "MockAIProvider refuses to run in production. Set ALLOW_MOCK_AI=true (explicit opt-in) or set AI_PROVIDER=workers-ai."
     );
   }
   return new MockAIProvider();

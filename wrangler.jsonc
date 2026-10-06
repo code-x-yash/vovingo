@@ -11,8 +11,11 @@
   "vars": {
     "D1_AUTH_MODE": "binding",
     "STORAGE_DRIVER": "r2",
-    "AI_PROVIDER": "mock",
+    "AI_PROVIDER": "workers-ai",
     "ALLOW_MOCK_AI": "true"
+  },
+  "ai": {
+    "binding": "AI"
   },
   "d1_databases": [
     {

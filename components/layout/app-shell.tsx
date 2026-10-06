@@ -13,7 +13,15 @@ function isImmersive(pathname: string): boolean {
   return /^\/lessons\/[^/]+/.test(pathname);
 }
 
-export function AppShell({ user, children }: { user: ShellUser; children: ReactNode }) {
+export function AppShell({
+  user,
+  isPro = false,
+  children,
+}: {
+  user: ShellUser;
+  isPro?: boolean;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
 
   if (HIDDEN_ON.includes(pathname) || isImmersive(pathname)) {
@@ -25,7 +33,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: ReactN
       <div className="flex min-h-dvh w-full">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar user={user} />
+          <TopBar user={user} isPro={isPro} />
           <main className="min-w-0 flex-1 pb-20 lg:pb-0">{children}</main>
         </div>
         <MobileNav />

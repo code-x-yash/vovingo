@@ -13,6 +13,7 @@ export const signupSchema = z.object({
     .max(128, { error: "Password must be under 128 characters." })
     .regex(/[a-zA-Z]/, { error: "Include at least one letter." })
     .regex(/[0-9]/, { error: "Include at least one number." }),
+  ref: z.string().trim().min(1).max(64).optional(),
 });
 
 export const loginSchema = z.object({

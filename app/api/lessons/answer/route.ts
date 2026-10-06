@@ -9,6 +9,7 @@ import { jsonRateLimited, readJson } from "@/lib/api/http";
 import { fieldErrors } from "@/lib/auth/schemas";
 import { gradeExercise } from "@/lib/exercises/grade";
 import { completePlanItemsByRef, selectToday } from "@/lib/plan/store";
+import { enforceQuota, recordUsage } from "@/lib/billing/entitlements";
 
 const answerSchema = z.object({
   exerciseId: z.coerce.number().int().min(1),
@@ -75,6 +76,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Submit an answer first." }, { status: 400 });
   }
 
+  const priorRows = await db
+    .select()
+    .from(lessonProgress)
+    .where(and(eq(lessonProgress.userId, user.id), eq(lessonProgress.lessonId, ex.lessonId)))
+    .limit(1);
+  const prior = priorRows[0];
+
+  // Free plan:5 lesson starts a week. Finishing an in-progress lesson stays free.
+  if (!prior) {
+    const denied = await enforceQuota(user.id, "lessons");
+    if (denied) return denied;
+  }
+
   const grade = gradeExercise(
     {
       type: ex.type,
@@ -128,12 +142,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const score = gradedTotal > 0 ? Math.round((correct / gradedTotal) * 100) : null;
 
   const now = new Date();
-  const priorRows = await db
-    .select()
-    .from(lessonProgress)
-    .where(and(eq(lessonProgress.userId, user.id), eq(lessonProgress.lessonId, ex.lessonId)))
-    .limit(1);
-  const prior = priorRows[0];
 
   const progressValues = {
     exercisesDone: answered,
@@ -172,6 +180,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let planXp = 0;
   if (completed && prior?.status !== "completed") {
+    await recordUsage(user.id, "lessons", { lessonId: ex.lessonId });
     const plan = await selectToday(user.id);
     if (plan) {
       const outcome = await completePlanItemsByRef(user.id, plan, {

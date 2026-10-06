@@ -5,14 +5,17 @@ const isDev = process.env.NODE_ENV !== "production";
 const contentSecurityPolicy = [
   "default-src 'self'",
   // Next injects inline bootstrap/theme scripts; dev tooling may use eval.
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // Razorpay loads its hosted checkout script; Stripe checkout is a redirect.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://checkout.razorpay.com https://js.stripe.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self' data:",
   // Web Speech API recognition is routed through Google's speech service;
   // the reachability probe also needs it. Google APIs only — no script/style loosening.
-  "connect-src 'self' https://*.google.com https://*.googleapis.com https://*.gstatic.com",
+  `connect-src 'self' https://*.google.com https://*.googleapis.com https://*.gstatic.com https://api.razorpay.com https://lumberjack.razorpay.com https://api.stripe.com`,
+  // Checkout iframes (Razorpay modal, Stripe hosted checkout fallback).
+  `frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://api.stripe.com https://checkout.stripe.com`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

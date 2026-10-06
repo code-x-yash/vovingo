@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Sparkles } from "lucide-react";
+import { isQuotaWall, Paywall } from "@/components/billing/paywall";
 
 export type ClientMessage = {
   role: "user" | "ai";
@@ -25,6 +26,7 @@ export function ChatView({ conversationId, initialMessages, ended }: Props) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -45,10 +47,16 @@ export function ChatView({ conversationId, initialMessages, ended }: Props) {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         reply?: string;
         detected?: { title: string }[];
       };
       if (!res.ok || !data.reply) {
+        if (isQuotaWall(res.status, data)) {
+          setPaywallOpen(true);
+          setInput(text);
+          return;
+        }
         setError(data.error ?? "Could not send — try again.");
         setInput(text);
         return;
@@ -196,6 +204,8 @@ export function ChatView({ conversationId, initialMessages, ended }: Props) {
           </Button>
         </div>
       )}
+
+      <Paywall open={paywallOpen} onOpenChange={setPaywallOpen} metric="conversation" />
     </div>
   );
 }

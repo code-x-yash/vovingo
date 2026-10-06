@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isQuotaWall, Paywall } from "@/components/billing/paywall";
 import { countWords } from "@/lib/writing/analyze";
 import type { DetectedMistake } from "@/lib/db/schema";
 
@@ -54,6 +55,7 @@ export function Editor({ slug, minWords }: { slug: string; minWords: number }) {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const words = countWords(text);
   const ready = words >= minWords && text.trim().length > 0;
@@ -70,10 +72,15 @@ export function Editor({ slug, minWords }: { slug: string; minWords: number }) {
       });
       const data = (await res.json().catch(() => ({}))) as Outcome & {
         error?: string;
+        code?: string;
         minWords?: number;
         current?: number;
       };
       if (!res.ok || !data.scores) {
+        if (isQuotaWall(res.status, data)) {
+          setPaywallOpen(true);
+          return;
+        }
         setError(data.error ?? "Could not analyse that — try again.");
         return;
       }
@@ -110,6 +117,7 @@ export function Editor({ slug, minWords }: { slug: string; minWords: number }) {
     ];
 
     return (
+      <>
       <div className="animate-fade-in mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
         <section className="flex flex-col gap-4 lg:col-span-3">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-xs sm:p-6">
@@ -219,10 +227,13 @@ export function Editor({ slug, minWords }: { slug: string; minWords: number }) {
           </div>
         </aside>
       </div>
+      <Paywall open={paywallOpen} onOpenChange={setPaywallOpen} metric="writing" />
+      </>
     );
   }
 
   return (
+    <>
     <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
       <section className="lg:col-span-3">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-xs sm:p-6">
@@ -308,5 +319,7 @@ export function Editor({ slug, minWords }: { slug: string; minWords: number }) {
         </div>
       </aside>
     </div>
+    <Paywall open={paywallOpen} onOpenChange={setPaywallOpen} metric="writing" />
+    </>
   );
 }

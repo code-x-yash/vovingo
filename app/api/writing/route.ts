@@ -6,6 +6,7 @@ import { jsonRateLimited, readJson } from "@/lib/api/http";
 import { fieldErrors } from "@/lib/auth/schemas";
 import { writingPrompts } from "@/lib/content/writing-prompts";
 import { listRecentWritings, submitWriting } from "@/lib/writing/store";
+import { enforceQuota, recordUsage } from "@/lib/billing/entitlements";
 
 const submitSchema = z.object({
   slug: z.string().trim().min(1).max(60),
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const denied = await enforceQuota(user.id, "writing");
+  if (denied) return denied;
+
   const result = await submitWriting(user.id, parsed.data.slug, parsed.data.text);
   if (!result.ok) {
     if (result.code === "not_found") {
@@ -57,5 +61,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 422 }
     );
   }
+  await recordUsage(user.id, "writing", { slug: parsed.data.slug });
   return NextResponse.json(result);
 }

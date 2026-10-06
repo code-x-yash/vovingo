@@ -480,6 +480,55 @@ export default async function DashboardPage() {
           </Link>
         )}
 
+        {/* ── 3-minute workout ─────────────────────────────────────── */}
+        <section className="rounded-2xl border border-border bg-card p-5 shadow-xs sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-7 place-items-center rounded-lg bg-orange-500/10 text-orange-500">
+                <Zap className="size-4" />
+              </span>
+              <p className="text-eyebrow">3-minute workout</p>
+            </div>
+            <span className="rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+              ≈3 min · resets daily
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+            {[
+              {
+                n: "01",
+                title: "Fix one pattern",
+                href: topPattern ? `/mistakes/${topPattern.id}` : "/mistakes",
+                sub: topPattern ? topPattern.title : "Browse your patterns",
+              },
+              {
+                n: "02",
+                title: "Speedrun round",
+                href: "/speedrun",
+                sub: "Ten questions against the clock",
+              },
+              {
+                n: "03",
+                title: "Record a take",
+                href: "/speaking",
+                sub: "One prompt, scored instantly",
+              },
+            ].map((drill) => (
+              <Link
+                key={drill.n}
+                href={drill.href}
+                className="interactive-card group rounded-xl border border-border/70 bg-background/60 p-3.5 transition-colors hover:bg-muted/60"
+              >
+                <span className="font-mono text-eyebrow">{drill.n}</span>
+                <p className="mt-2 text-sm font-semibold transition-colors group-hover:text-primary">
+                  {drill.title}
+                </p>
+                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{drill.sub}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
         {/* ── Explore ───────────────────────────────────────────────── */}
         <section>
           <div className="flex items-baseline justify-between">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Menu, TrendingUp } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Settings, TrendingUp } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ function initials(name: string): string {
     .join("");
 }
 
-export function TopBar({ user }: { user: ShellUser }) {
+export function TopBar({ user, isPro = false }: { user: ShellUser; isPro?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -51,6 +51,21 @@ export function TopBar({ user }: { user: ShellUser }) {
       </p>
 
       <div className="ml-auto flex items-center gap-1.5">
+        {isPro ? (
+          <span className="mr-1 hidden items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary sm:inline-flex">
+            PRO
+          </span>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mr-1 hidden sm:inline-flex"
+            render={<Link href="/pricing" />}
+          >
+            Upgrade
+          </Button>
+        )}
+
         <ThemeToggle />
 
         <DropdownMenu>
@@ -83,6 +98,10 @@ export function TopBar({ user }: { user: ShellUser }) {
             <DropdownMenuItem render={<Link href="/progress" />}>
               <TrendingUp className="size-4" />
               Progress
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link href="/settings" />}>
+              <Settings className="size-4" />
+              Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

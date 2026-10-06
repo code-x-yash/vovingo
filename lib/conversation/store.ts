@@ -15,6 +15,7 @@ import { findStreak } from "@/lib/plan/store";
 import { EMPTY_STREAK } from "@/lib/plan/streak";
 import { detectMistakes } from "@/lib/mistakes/detect";
 import { loadDetectRules, recordMistakes } from "@/lib/mistakes/store";
+import { generateChatReply } from "@/lib/ai/roleplay";
 import {
   coachReply,
   initialCoachMessage,
@@ -317,8 +318,12 @@ export async function sendChatTurn(
     });
   }
 
-  let reply: string;
+  let mockReply: string;
+  let kind: "scenario" | "coach";
+  let scenarioCtx: ScenarioContext | undefined;
+  let coachCtx: CoachContext | undefined;
   if (conv.scenarioId !== null) {
+    kind = "scenario";
     const scenarioRows = await db
       .select({
         title: scenarios.title,
@@ -330,7 +335,7 @@ export async function sendChatTurn(
       .where(eq(scenarios.id, conv.scenarioId))
       .limit(1);
     const s = scenarioRows[0];
-    const ctx: ScenarioContext = s
+    scenarioCtx = s
       ? {
           title: s.title,
           description: s.description,
@@ -343,11 +348,21 @@ export async function sendChatTurn(
           persona: conv.persona,
           openingPrompt: null,
         };
-    reply = scenarioReply(history, ctx, text);
+    mockReply = scenarioReply(history, scenarioCtx, text);
   } else {
-    const ctx = await collectCoachContext(userId);
-    reply = coachReply(history, ctx, text);
+    kind = "coach";
+    coachCtx = await collectCoachContext(userId);
+    mockReply = coachReply(history, coachCtx, text);
   }
+  const gen = await generateChatReply({
+    kind,
+    ...(scenarioCtx ? { scenario: scenarioCtx } : {}),
+    ...(coachCtx ? { coach: coachCtx } : {}),
+    history,
+    userText: text,
+    mockReply,
+  });
+  const reply = gen.reply;
 
   const now = new Date();
   await db.insert(conversationMessages).values({

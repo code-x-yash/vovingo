@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ref = searchParams.get("ref")?.trim() || undefined;
 
   const isSignup = mode === "signup";
   const endpoint = isSignup ? "/api/auth/signup" : "/api/auth/login";
@@ -36,7 +38,11 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isSignup ? { name, email, password } : { email, password }),
+        body: JSON.stringify(
+          isSignup
+            ? { name, email, password, ...(ref ? { ref } : {}) }
+            : { email, password }
+        ),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;

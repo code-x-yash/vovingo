@@ -7,6 +7,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { clientIp, rateLimit } from "@/lib/auth/rate-limit";
 import { jsonRateLimited, readJson } from "@/lib/api/http";
 import { fieldErrors } from "@/lib/auth/schemas";
+import { completeReferral } from "@/lib/billing/entitlements";
 
 const onboardingSchema = z.object({
   goals: z
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   await db.update(users).set({ updatedAt: now }).where(eq(users.id, user.id));
+
+  // Referred signups: pay the referrer their stacking Pro days on completion.
+  await completeReferral(user.id).catch(() => false);
 
   return NextResponse.json({
     ok: true,

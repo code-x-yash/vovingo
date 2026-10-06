@@ -15,6 +15,13 @@
       "when": 1791058586611,
       "tag": "0001_chubby_marvel_zombies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791233513886,
+      "tag": "0002_third_starjammers",
+      "breakpoints": true
     }
   ]
 }

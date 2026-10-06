@@ -10,6 +10,8 @@ import {
   userMistakes,
 } from "@/lib/db/schema";
 import { completePlanItemsByRef, selectToday } from "@/lib/plan/store";
+import { getEntitlements } from "@/lib/billing/entitlements";
+import { FREE_RULES_TRACKED } from "@/lib/billing/plans";
 import type { DetectRule } from "./detect";
 import {
   buildPracticeQuestions,
@@ -118,6 +120,21 @@ export async function recordMistakes(
     .where(and(eq(userMistakes.userId, userId), inArray(userMistakes.mistakeId, mistakeIds)));
   const byMistakeId = new Map(existingRows.map((r) => [r.mistakeId, r]));
 
+  // Free plan tracks at most FREE_RULES_TRACKED distinct rules (marketing
+  // promise); already-tracked rules keep updating, new ones stop being added.
+  const { isPro } = await getEntitlements(userId);
+  let trackedTotal = -1;
+  const loadTrackedTotal = async (): Promise<number> => {
+    if (trackedTotal < 0) {
+      const rows = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(userMistakes)
+        .where(eq(userMistakes.userId, userId));
+      trackedTotal = rows[0]?.value ?? 0;
+    }
+    return trackedTotal;
+  };
+
   const now = new Date();
   const occurrencesToInsert: (typeof mistakeOccurrences.$inferInsert)[] = [];
   const newKeys: string[] = [];
@@ -125,6 +142,11 @@ export async function recordMistakes(
   for (const d of resolvable) {
     const catalogRow = byKey.get(d.key)!;
     const prev = byMistakeId.get(catalogRow.id);
+
+    if (!prev && !isPro && (await loadTrackedTotal()) >= FREE_RULES_TRACKED) {
+      continue;
+    }
+
     const { trend, status } = nextTrendState(
       prev ? { occurrences: prev.occurrences + 1, practiceCount: prev.practiceCount } : null
     );
@@ -162,6 +184,7 @@ export async function recordMistakes(
         .returning({ id: userMistakes.id });
       userMistakeId = inserted[0].id;
       newKeys.push(d.key);
+      if (trackedTotal >= 0) trackedTotal += 1;
     }
 
     occurrencesToInsert.push({

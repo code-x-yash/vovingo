@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { isQuotaWall, Paywall } from "@/components/billing/paywall";
 import { Check, ChevronRight, RotateCcw, X } from "lucide-react";
 
 export type RunnerExercise = {
@@ -82,6 +83,7 @@ export function LessonRunner({ lesson, exercises, initial, priorBest }: Props) {
   const [planXp, setPlanXp] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const total = exercises.length;
   const sessionGraded = exercises.filter((ex) => hasAnswer(ex) && checked[ex.id]);
@@ -117,6 +119,7 @@ export function LessonRunner({ lesson, exercises, initial, priorBest }: Props) {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         correct?: boolean | null;
         feedback?: string;
         expected?: string[] | null;
@@ -124,6 +127,10 @@ export function LessonRunner({ lesson, exercises, initial, priorBest }: Props) {
         planXp?: number;
       };
       if (!res.ok) {
+        if (isQuotaWall(res.status, data)) {
+          setPaywallOpen(true);
+          return;
+        }
         setError(data.error ?? "Could not save your answer.");
         return;
       }
@@ -300,6 +307,7 @@ export function LessonRunner({ lesson, exercises, initial, priorBest }: Props) {
           )}
         </div>
       </div>
+      <Paywall open={paywallOpen} onOpenChange={setPaywallOpen} metric="lessons" />
     </section>
   );
 }

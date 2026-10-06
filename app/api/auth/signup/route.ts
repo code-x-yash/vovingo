@@ -7,6 +7,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { fieldErrors, normalizeEmail, signupSchema } from "@/lib/auth/schemas";
 import { createSession } from "@/lib/auth/session";
 import { jsonError, jsonRateLimited, readJson } from "@/lib/api/http";
+import { attachReferral } from "@/lib/billing/entitlements";
 
 const BASELINE_SKILLS = [
   "grammar",
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   await db.insert(profiles).values({ userId });
   await db.insert(skillScores).values(BASELINE_SKILLS.map((skill) => ({ userId, skill, score: 0 })));
+
+  // Referral attribution (invalid or self codes are silently ignored).
+  if (parsed.data.ref) {
+    await attachReferral(userId, parsed.data.ref).catch(() => undefined);
+  }
 
   await createSession(userId, request.headers.get("user-agent"));
 

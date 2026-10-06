@@ -1129,6 +1129,143 @@ export const promptLogs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Billing & growth
+// ---------------------------------------------------------------------------
+
+export const paymentOrders = sqliteTable(
+  "payment_orders",
+  {
+    id: id(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    plan: text("plan", { enum: ["pro_monthly", "pro_yearly"] }).notNull(),
+    provider: text("provider").notNull().default("razorpay"),
+    providerOrderId: text("provider_order_id"),
+    amountPaise: integer("amount_paise").notNull(),
+    currency: text("currency").notNull().default("INR"),
+    status: text("status", {
+      enum: ["created", "paid", "failed", "refunded"],
+    })
+      .notNull()
+      .default("created"),
+    paymentRef: text("payment_ref"),
+    paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("payment_orders_user_idx").on(t.userId),
+    uniqueIndex("payment_orders_provider_uq").on(t.providerOrderId),
+  ]
+);
+
+export const proWaitlist = sqliteTable("pro_waitlist", {
+  id: id(),
+  email: text("email").notNull().unique(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  source: text("source").notNull().default("pricing"),
+  createdAt: createdAt(),
+});
+
+export const referralCodes = sqliteTable("referral_codes", {
+  id: id(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" })
+    .unique(),
+  code: text("code").notNull().unique(),
+  createdAt: createdAt(),
+});
+
+export const referrals = sqliteTable(
+  "referrals",
+  {
+    id: id(),
+    referrerUserId: integer("referrer_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    referredUserId: integer("referred_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    code: text("code").notNull(),
+    status: text("status", { enum: ["pending", "rewarded"] })
+      .notNull()
+      .default("pending"),
+    rewardDays: integer("reward_days").notNull().default(7),
+    rewardedAt: integer("rewarded_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("referrals_referrer_idx").on(t.referrerUserId)]
+);
+
+// ---------------------------------------------------------------------------
+// Gamification: speedruns, shared story, preferences, web push
+// ---------------------------------------------------------------------------
+
+export const speedruns = sqliteTable(
+  "speedruns",
+  {
+    id: id(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mode: text("mode", { enum: ["vocab", "grammar", "tone"] }).notNull(),
+    scoreMs: integer("score_ms").notNull(),
+    correct: integer("correct").notNull(),
+    total: integer("total").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("speedruns_user_mode_idx").on(t.userId, t.mode, t.createdAt)]
+);
+
+export const storyEntries = sqliteTable(
+  "story_entries",
+  {
+    id: id(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    chapter: integer("chapter").notNull().default(1),
+    votes: integer("votes").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("story_entries_chapter_idx").on(t.chapter, t.createdAt)]
+);
+
+export const userSettings = sqliteTable(
+  "user_settings",
+  {
+    id: id(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    workoutReminderAt: text("workout_reminder_at"),
+    dailyGoalMinutes: integer("daily_goal_minutes").notNull().default(20),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  }
+);
+
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: id(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("push_subscriptions_user_idx").on(t.userId)]
+);
+
+// ---------------------------------------------------------------------------
 // Relations (for db.query.* API)
 // ---------------------------------------------------------------------------
 
